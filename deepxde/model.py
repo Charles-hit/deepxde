@@ -4,7 +4,11 @@ import pickle
 from collections import OrderedDict
 
 import numpy as np
+import six
 import paddle
+from paddle import fluid
+from paddle.fluid import core
+from paddle.fluid.framework import Variable
 from . import config
 from . import display
 from . import gradients as grad
@@ -14,8 +18,9 @@ from . import optimizers
 from . import utils
 from .backend import backend_name, tf, torch, jax, paddle
 from .callbacks import CallbackList
+import os
 
-LOSS_FLAG = False
+LOSS_FLAG = True
 class Model:
     """A ``Model`` trains a ``NN`` on a ``Data``.
 
@@ -689,19 +694,63 @@ class Model:
             self.exe.run(self.start_up_program)
             print("prim build end")
 
+        def cinn_enabled():
+            '''
+            Determine whether CINN is enabled. Ref https://github.com/PaddlePaddle/CINN
+            '''
+            cinn_flag = os.getenv('FLAGS_use_cinn', '0')
+            check_cinn_set = cinn_flag == "1" or cinn_flag.lower() == "true"
+            return check_cinn_set        
+
+        def _add_fetch_ops(program, fetch_list, fetch_var_name="fetch"):
+            assert isinstance(program, fluid.Program)
+            tmp_program = program.clone()
+            global_block = tmp_program.global_block()
+
+            if fetch_var_name in global_block.vars:
+                fetch_var = global_block.var(fetch_var_name)
+            else:
+                fetch_var = global_block.create_var(
+                    name=fetch_var_name,
+                    type=core.VarDesc.VarType.FETCH_LIST,
+                    persistable=True)
+
+            # append fetch_operators
+            if not fluid.executor.has_fetch_operators(global_block, fetch_list,
+                                                    fetch_var_name, 'fetch'):
+                for i, var in enumerate(fetch_list):
+                    assert isinstance(var, Variable) or isinstance(
+                        var, six.string_types), (
+                            "Wrong type for fetch_list[%s]: %s" % (i, type(var)))
+                    global_block.append_op(
+                        type='fetch',
+                        inputs={'X': [var]},
+                        outputs={'Out': [fetch_var]},
+                        attrs={'col': i})
+            return tmp_program
+
         def outputs(training, inputs):
             self.feeds = dict()
             self.extra_fetch_var = []
-            if training : 
+            if training:
                 self.feeds['train_inputs'] = inputs
                 if loss_weights is not None:
                     self.feeds['loss_weights'] = loss_weights
 
                 self.fetches = [self.train_losses.name]
                 self.fetches.append(self.train_outputs.name)
-                self.fetches.append(self.var_list)
-                static_out = self.exe.run(self.train_program, feed=self.feeds,
-                            fetch_list=self.fetches)
+                self.fetches = self.fetches + self.var_list
+                if not cinn_enabled(): 
+                    static_out = self.exe.run(self.train_program, feed=self.feeds,
+                                fetch_list=self.fetches)
+                else:
+                    compiled_program = _add_fetch_ops(self.train_program,self.fetches)
+                    compiled_program = paddle.static.CompiledProgram(compiled_program).with_data_parallel(
+                    loss_name=self.train_losses.name,
+                    build_strategy=paddle.static.BuildStrategy(),
+                    exec_strategy=paddle.static.ExecutionStrategy())
+                    static_out = self.exe.run(compiled_program, feed=self.feeds,
+                                fetch_list=self.fetches)
             else:
                 if paddle.incubate.autograd.prim_enabled():
                     self.feeds['test_inputs'] = inputs
@@ -710,23 +759,32 @@ class Model:
 
                     self.fetches = [self.test_losses.name]
                     self.fetches.append(self.test_outputs.name)
-                    self.fetches.append(self.var_list)
-                    static_out = self.exe.run(self.test_program, feed=self.feeds,
-                            fetch_list=self.fetches)
+                    self.fetches = self.fetches + self.var_list
+                    if not cinn_enabled(): 
+                        static_out = self.exe.run(self.test_program, feed=self.feeds,
+                                fetch_list=self.fetches)
+                    else:
+                        compiled_program = _add_fetch_ops(self.test_program,self.fetches)
+                        compiled_program = paddle.static.CompiledProgram(compiled_program).with_data_parallel(
+                        loss_name=self.train_losses.name,
+                        build_strategy=paddle.static.BuildStrategy(),
+                        exec_strategy=paddle.static.ExecutionStrategy())
+                        static_out = self.exe.run(compiled_program, feed=self.feeds,
+                                    fetch_list=self.fetches)
                 else:
-                    self.feeds['train_inputs'] = inputs
+                    self.feeds['test_inputs'] = inputs
                     if loss_weights is not None:
                         self.feeds['loss_weights'] = loss_weights
 
-                    self.fetches = [self.train_losses.name]
-                    self.fetches.append(self.train_outputs.name)
+                    self.fetches = [self.test_losses.name]
+                    self.fetches.append(self.test_outputs.name)
                     self.fetches.append(self.var_list)
-                    static_out = self.exe.run(self.train_program, feed=self.feeds,
+
+                    static_out = self.exe.run(self.test_program, feed=self.feeds,
                             fetch_list=self.fetches)
             
             for i in range(len(self.var_list)):
                 self.extra_fetch_var.append(static_out[i+2])    
-                
 
         def outputs_losses(training, inputs, targets, losses_fn):
             self.feeds = dict()
@@ -740,11 +798,43 @@ class Model:
 
                 self.fetches = [self.train_losses.name]
                 self.fetches.append(self.train_outputs.name)
-                self.fetches.append(self.var_list)
-                static_out = self.exe.run(self.train_program, feed=self.feeds,
-                            fetch_list=self.fetches)
+                self.fetches = self.fetches + self.var_list
+
+                if not cinn_enabled():
+                    static_out = self.exe.run(self.train_program, feed=self.feeds,
+                                fetch_list=self.fetches)
+                else:
+                    compiled_program = _add_fetch_ops(self.train_program,self.fetches)
+                    compiled_program = paddle.static.CompiledProgram(compiled_program).with_data_parallel(
+                    loss_name=self.train_losses.name,
+                    build_strategy=paddle.static.BuildStrategy(),
+                    exec_strategy=paddle.static.ExecutionStrategy())
+                    static_out = self.exe.run(compiled_program, feed=self.feeds,
+                                fetch_list=self.fetches)   
             else:
                 if paddle.incubate.autograd.prim_enabled():
+                    self.feeds['test_inputs'] = inputs
+                    if loss_weights is not None:
+                        self.feeds['loss_weights'] = loss_weights
+                    if targets is not None:
+                        self.feeds['test_targets'] = targets
+
+                    self.fetches = [self.test_losses.name]
+                    self.fetches.append(self.test_outputs.name)
+                    self.fetches = self.fetches + self.var_list
+
+                    if not cinn_enabled():
+                        static_out = self.exe.run(self.test_program, feed=self.feeds,
+                                fetch_list=self.fetches)
+                    else:
+                        compiled_program = _add_fetch_ops(self.test_program,self.fetches)
+                        compiled_program = paddle.static.CompiledProgram(compiled_program).with_data_parallel(
+                        loss_name=self.test_losses.name,
+                        build_strategy=paddle.static.BuildStrategy(),
+                        exec_strategy=paddle.static.ExecutionStrategy())
+                        static_out = self.exe.run(compiled_program, feed=self.feeds,
+                                    fetch_list=self.fetches) 
+                else:
                     self.feeds['test_inputs'] = inputs
                     if loss_weights is not None:
                         self.feeds['loss_weights'] = loss_weights
@@ -756,26 +846,13 @@ class Model:
                     self.fetches.append(self.var_list)
                     static_out = self.exe.run(self.test_program, feed=self.feeds,
                             fetch_list=self.fetches)
-                else:
-                    self.feeds['train_inputs'] = inputs
-                    if loss_weights is not None:
-                        self.feeds['loss_weights'] = loss_weights
-                    if targets is not None:
-                        self.feeds['train_targets'] = targets
-
-                    self.fetches = [self.train_losses.name]
-                    self.fetches.append(self.train_outputs.name)
-                    self.fetches.append(self.var_list)
-                    static_out = self.exe.run(self.train_program, feed=self.feeds,
-                            fetch_list=self.fetches)
             
             # Data losses
             losses = static_out[0]
             if losses.size == 1:
                 total_loss = losses.item()
                 if LOSS_FLAG:
-                    if isinstance(total_loss, float):
-                        print(f"{total_loss:.10f}")
+                    print(f"{total_loss:.10f}")
             outputs_ = static_out[1]
             for i in range(len(self.var_list)):
                 self.extra_fetch_var.append(static_out[i+2])

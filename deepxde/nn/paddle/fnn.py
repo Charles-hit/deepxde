@@ -25,14 +25,14 @@ class FNN(NN):
             # self.linears.append(paddle.nn.Linear(layer_sizes[i - 1], layer_sizes[i]))
             print("task_name:", task_name)
             
-            if isinstance(task_name, str) and os.path.exists(f"/home/wangruting/science/deepxde_wrt_44_orig/deepxde_wrt_44/{task_name}/linears.{i-1}.weight.npy") and os.path.exists(f"/home/wangruting/science/deepxde_wrt_44_orig/deepxde_wrt_44/{task_name}/linears.{i-1}.bias.npy"):
+            if isinstance(task_name, str) and os.path.exists(f"./params/{task_name}/linears.{i-1}.weight.npy") and os.path.exists(f"./params/{task_name}/linears.{i-1}.bias.npy"):
                 print("load param from file")
                 self.linears.append(
                     paddle.nn.Linear(
                         layer_sizes[i - 1],
                         layer_sizes[i],
-                        weight_attr=ParamAttr(initializer=Assign(np.load(f"/home/wangruting/science/deepxde_wrt_44_orig/deepxde_wrt_44/{task_name}/linears.{i-1}.weight.npy"))),
-                        bias_attr=ParamAttr(initializer=Assign(np.load(f"/home/wangruting/science/deepxde_wrt_44_orig/deepxde_wrt_44/{task_name}/linears.{i-1}.bias.npy")))
+                        weight_attr=ParamAttr(initializer=Assign(np.load(f"./params/{task_name}/linears.{i-1}.weight.npy"))),
+                        bias_attr=ParamAttr(initializer=Assign(np.load(f"./params/{task_name}/linears.{i-1}.bias.npy")))
 
                         # weight_attr=ParamAttr(initializer=Constant(0.5)),
                         # bias_attr=ParamAttr(initializer=Constant(0.5))
@@ -56,12 +56,12 @@ class FNN(NN):
                 initializer_zero(self.linears[-1].bias)
 
         # debug info
-        if paddle.in_dynamic_mode():
-            f = open('paddle_dygraph_param.log','ab')
-            for linear in self.linears:
-                np.savetxt(f,linear.weight.numpy().reshape(1,-1),delimiter=",")
-                np.savetxt(f,linear.bias.numpy().reshape(1,-1),delimiter=",")
-            f.close()
+        # if paddle.in_dynamic_mode():
+        #     f = open('paddle_dygraph_param.log','ab')
+        #     for linear in self.linears:
+        #         np.savetxt(f,linear.weight.numpy().reshape(1,-1),delimiter=",")
+        #         np.savetxt(f,linear.bias.numpy().reshape(1,-1),delimiter=",")
+        #     f.close()
         # debug info end
 
     def forward(self, inputs):

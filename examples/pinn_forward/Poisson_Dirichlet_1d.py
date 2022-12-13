@@ -39,7 +39,7 @@ else:
 
 task_name = os.path.basename(__file__).split(".")[0]
 # 创建任务日志文件夹
-log_dir = f"./{task_name}"
+log_dir = f"./params/{task_name}"
 os.makedirs(f"{log_dir}", exist_ok=True)
 
 
@@ -66,24 +66,24 @@ for i in range(1, len(layer_size)):
     shape = (layer_size[i-1], layer_size[i])
     w = np.random.normal(size=shape).astype('float32')
     w_array.append(w)
-
+ 
 activation = "tanh"
 initializer = "Glorot uniform"
 net = dde.nn.FNN(layer_size, activation, initializer, task_name)
 
-# new_save = False
-# for name, param in net.named_parameters():
-#     if os.path.exists(f"{log_dir}/{name}.npy"):
-#         continue
-#     new_save = True
-#     np.save(f"{log_dir}/{name}.npy", param.numpy())
-#     print(f"successfully save param {name} at [{log_dir}/{name}.npy]")
+new_save = False
+for name, param in net.named_parameters():
+    if os.path.exists(f"{log_dir}/{name}.npy"):
+        continue
+    new_save = True
+    np.save(f"{log_dir}/{name}.npy", param.numpy())
+    print(f"successfully save param {name} at [{log_dir}/{name}.npy]")
 
-# if new_save:
-#     print("第一次保存模型完毕，自动退出，请再次运行")
-#     exit(0)
-# else:
-#     print("所有模型参数均存在，开始训练...............")
+if new_save:
+    print("第一次保存模型完毕，自动退出，请再次运行")
+    exit(0)
+else:
+    print("所有模型参数均存在，开始训练...............")
 
 model = dde.Model(data, net)
 model.compile("adam", lr=0.001, metrics=["l2 relative error"])
