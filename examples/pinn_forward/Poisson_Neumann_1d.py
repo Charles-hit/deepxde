@@ -33,9 +33,8 @@ else:
 
 
 task_name = os.path.basename(__file__).split(".")[0]
-
 # 创建任务日志文件夹
-log_dir = f"./{task_name}"
+log_dir = f"./params/{task_name}"
 os.makedirs(f"{log_dir}", exist_ok=True)
 
 
