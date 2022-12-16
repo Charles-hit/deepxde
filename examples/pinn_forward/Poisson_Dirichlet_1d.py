@@ -100,7 +100,7 @@ losshistory, train_state = model.train(iterations=10000, display_every=1)
 # )
 # losshistory, train_state = model.train(iterations=10000, callbacks=[checkpointer, movie])
 
-dde.saveplot(losshistory, train_state, issave=True, isplot=True)
+# dde.saveplot(losshistory, train_state, issave=True, isplot=True)
 
 # Optional: Restore the saved model with the smallest training loss
 # model.restore(f"model/model-{train_state.best_step}.ckpt", verbose=1)

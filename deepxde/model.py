@@ -65,6 +65,8 @@ class Model:
                 self.feeds = dict()
                 self.fetches = dict()
 
+                self.trans_train_program_flag = False
+                self.trans_test_program_flag = False
                 #train elements
                 self.train_program = None
                 self.train_targets = dict()
@@ -635,7 +637,7 @@ class Model:
                     self.train_losses = paddle.sum(losses)
 
                     self.opt.minimize(self.train_losses, startup_program=self.start_up_program)
-                    paddle.incubate.autograd.prim2orig()
+                    # paddle.incubate.autograd.prim2orig()
 
                     print("train_program success")
 
@@ -683,7 +685,7 @@ class Model:
                     grad.clear()
                     self.test_losses = paddle.sum(losses)
 
-                    paddle.incubate.autograd.prim2orig()
+                    # paddle.incubate.autograd.prim2orig()
 
                     print("test_program success")
 
@@ -744,12 +746,14 @@ class Model:
                     static_out = self.exe.run(self.train_program, feed=self.feeds,
                                 fetch_list=self.fetches)
                 else:
-                    compiled_program = _add_fetch_ops(self.train_program,self.fetches)
-                    compiled_program = paddle.static.CompiledProgram(compiled_program).with_data_parallel(
-                    loss_name=self.train_losses.name,
-                    build_strategy=paddle.static.BuildStrategy(),
-                    exec_strategy=paddle.static.ExecutionStrategy())
-                    static_out = self.exe.run(compiled_program, feed=self.feeds,
+                    if not self.trans_train_program_flag :
+                        compiled_program = _add_fetch_ops(self.train_program,self.fetches)
+                        self.train_program = paddle.static.CompiledProgram(compiled_program).with_data_parallel(
+                        loss_name=self.train_losses.name,
+                        build_strategy=paddle.static.BuildStrategy(),
+                        exec_strategy=paddle.static.ExecutionStrategy())
+                        self.trans_train_program_flag = True
+                    static_out = self.exe.run(self.train_program, feed=self.feeds,
                                 fetch_list=self.fetches)
             else:
                 if paddle.incubate.autograd.prim_enabled():
@@ -761,26 +765,30 @@ class Model:
                     self.fetches.append(self.test_outputs.name)
                     self.fetches = self.fetches + self.var_list
                     if not cinn_enabled(): 
+                        with paddle.static.program_guard(self.test_program, self.start_up_program):
+                            paddle.incubate.autograd.prim2orig()
                         static_out = self.exe.run(self.test_program, feed=self.feeds,
                                 fetch_list=self.fetches)
                     else:
-                        compiled_program = _add_fetch_ops(self.test_program,self.fetches)
-                        compiled_program = paddle.static.CompiledProgram(compiled_program).with_data_parallel(
-                        loss_name=self.train_losses.name,
-                        build_strategy=paddle.static.BuildStrategy(),
-                        exec_strategy=paddle.static.ExecutionStrategy())
-                        static_out = self.exe.run(compiled_program, feed=self.feeds,
+                        if not self.trans_test_program_flag:
+                            compiled_program = _add_fetch_ops(self.test_program,self.fetches)
+                            self.test_program = paddle.static.CompiledProgram(compiled_program).with_data_parallel(
+                            loss_name=self.train_losses.name,
+                            build_strategy=paddle.static.BuildStrategy(),
+                            exec_strategy=paddle.static.ExecutionStrategy())
+                            self.trans_test_program_flag = True
+                        static_out = self.exe.run(self.test_program, feed=self.feeds,
                                     fetch_list=self.fetches)
                 else:
-                    self.feeds['test_inputs'] = inputs
+                    self.feeds['train_inputs'] = inputs
                     if loss_weights is not None:
                         self.feeds['loss_weights'] = loss_weights
 
-                    self.fetches = [self.test_losses.name]
-                    self.fetches.append(self.test_outputs.name)
+                    self.fetches = [self.train_losses.name]
+                    self.fetches.append(self.train_outputs.name)
                     self.fetches.append(self.var_list)
 
-                    static_out = self.exe.run(self.test_program, feed=self.feeds,
+                    static_out = self.exe.run(self.train_program, feed=self.feeds,
                             fetch_list=self.fetches)
             
             for i in range(len(self.var_list)):
@@ -799,17 +807,18 @@ class Model:
                 self.fetches = [self.train_losses.name]
                 self.fetches.append(self.train_outputs.name)
                 self.fetches = self.fetches + self.var_list
-
                 if not cinn_enabled():
                     static_out = self.exe.run(self.train_program, feed=self.feeds,
                                 fetch_list=self.fetches)
                 else:
-                    compiled_program = _add_fetch_ops(self.train_program,self.fetches)
-                    compiled_program = paddle.static.CompiledProgram(compiled_program).with_data_parallel(
-                    loss_name=self.train_losses.name,
-                    build_strategy=paddle.static.BuildStrategy(),
-                    exec_strategy=paddle.static.ExecutionStrategy())
-                    static_out = self.exe.run(compiled_program, feed=self.feeds,
+                    if not self.trans_train_program_flag:
+                        compiled_program = _add_fetch_ops(self.train_program,self.fetches)
+                        self.train_program = paddle.static.CompiledProgram(compiled_program).with_data_parallel(
+                        loss_name=self.train_losses.name,
+                        build_strategy=paddle.static.BuildStrategy(),
+                        exec_strategy=paddle.static.ExecutionStrategy())
+                        self.trans_train_program_flag = True
+                    static_out = self.exe.run(self.train_program, feed=self.feeds,
                                 fetch_list=self.fetches)   
             else:
                 if paddle.incubate.autograd.prim_enabled():
@@ -824,27 +833,31 @@ class Model:
                     self.fetches = self.fetches + self.var_list
 
                     if not cinn_enabled():
+                        with paddle.static.program_guard(self.test_program, self.start_up_program):
+                            paddle.incubate.autograd.prim2orig()
                         static_out = self.exe.run(self.test_program, feed=self.feeds,
                                 fetch_list=self.fetches)
                     else:
-                        compiled_program = _add_fetch_ops(self.test_program,self.fetches)
-                        compiled_program = paddle.static.CompiledProgram(compiled_program).with_data_parallel(
-                        loss_name=self.test_losses.name,
-                        build_strategy=paddle.static.BuildStrategy(),
-                        exec_strategy=paddle.static.ExecutionStrategy())
-                        static_out = self.exe.run(compiled_program, feed=self.feeds,
+                        if not self.trans_test_program_flag:
+                            compiled_program = _add_fetch_ops(self.test_program,self.fetches)
+                            self.test_program = paddle.static.CompiledProgram(compiled_program).with_data_parallel(
+                            loss_name=self.test_losses.name,
+                            build_strategy=paddle.static.BuildStrategy(),
+                            exec_strategy=paddle.static.ExecutionStrategy())
+                            self.trans_test_program_flag = True
+                        static_out = self.exe.run(self.test_program, feed=self.feeds,
                                     fetch_list=self.fetches) 
                 else:
-                    self.feeds['test_inputs'] = inputs
+                    self.feeds['train_inputs'] = inputs
                     if loss_weights is not None:
                         self.feeds['loss_weights'] = loss_weights
                     if targets is not None:
-                        self.feeds['test_targets'] = targets
+                        self.feeds['train_targets'] = targets
 
-                    self.fetches = [self.test_losses.name]
-                    self.fetches.append(self.test_outputs.name)
+                    self.fetches = [self.train_losses.name]
+                    self.fetches.append(self.train_outputs.name)
                     self.fetches.append(self.var_list)
-                    static_out = self.exe.run(self.test_program, feed=self.feeds,
+                    static_out = self.exe.run(self.train_program, feed=self.feeds,
                             fetch_list=self.fetches)
             
             # Data losses
