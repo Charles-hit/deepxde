@@ -103,11 +103,26 @@ class PFNN(NN):
             raise ValueError("output size must be integer")
 
         n_output = layer_sizes[-1]
+        self.p = 0
+        self.new_save = False
 
         def make_linear(n_input, n_output):
-            linear = paddle.nn.Linear(n_input, n_output)
-            initializer(linear.weight)
-            initializer_zero(linear.bias)
+            if isinstance(task_name, str) and os.path.exists(f"./params/{task_name}/weight_{self.p}.npy") and os.path.exists(f"./params/{task_name}/bias_{self.p}.npy"):
+                print("load param from file")
+                linear = paddle.nn.Linear(
+                    n_input,
+                    n_output,
+                    weight_attr=ParamAttr(initializer=Assign(np.load(f"./params/{task_name}/weight_{self.p}.npy").astype("float32"))),
+                    bias_attr=ParamAttr(initializer=Assign(np.load(f"./params/{task_name}/bias_{self.p}.npy").astype("float32")))
+                )
+                self.p += 1
+            else:
+                print("init param from random")
+                linear = paddle.nn.Linear(n_input, n_output)
+                initializer(linear.weight)
+                initializer_zero(linear.bias)
+                self.p += 1
+                self.new_save = True
             return linear
 
         self.layers = paddle.nn.LayerList()
@@ -154,6 +169,10 @@ class PFNN(NN):
             )
         else:
             self.layers.append(make_linear(layer_sizes[-2], n_output))
+
+        # if self.new_save:
+        #     print("第一次保存模型完毕，自动退出，请再次运行")
+        #     exit(0)
 
     def forward(self, inputs):
         x = inputs

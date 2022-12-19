@@ -9,6 +9,7 @@ from scipy.integrate import solve_bvp
 import argparse
 import paddle
 import random
+import os
 paddle.seed(0)
 np.random.seed(0)
 random.seed(0)
@@ -28,6 +29,12 @@ if args.static is True:
         print("============= prim prim prim prim prim  =============")
 else:
     print("============= 动态图动态图动态图动态图动态图 =============")
+
+
+task_name = os.path.basename(__file__).split(".")[0]
+# 创建任务日志文件夹
+log_dir = f"./params/{task_name}"
+os.makedirs(f"{log_dir}", exist_ok=True)
 
 l = 0.01
 
