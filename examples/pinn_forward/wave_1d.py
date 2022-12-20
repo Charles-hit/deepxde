@@ -7,6 +7,29 @@ References:
 import deepxde as dde
 import numpy as np
 
+import argparse
+import paddle
+import random
+paddle.seed(0)
+np.random.seed(0)
+random.seed(0)
+
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    '--static', default=False, action="store_true")
+parser.add_argument(
+    '--prim', default=False, action="store_true")
+args = parser.parse_args()
+
+if args.static is True:
+    print("============= 静态图静态图静态图静态图静态图 =============")
+    paddle.enable_static()
+    if args.prim:
+        paddle.incubate.autograd.enable_prim()
+        print("============= prim prim prim prim prim  =============")
+else:
+    print("============= 动态图动态图动态图动态图动态图 =============")
+
 
 A = 2
 C = 10

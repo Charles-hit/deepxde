@@ -186,14 +186,17 @@ class STMsFFN(MsFFN):
 
         self.sigmas_x = sigmas_x
         self.sigmas_t = sigmas_t
-
+        self.left_mat = paddle.to_tensor([[1.0], [0.0]], dtype="float32")
+        self.right_mat = paddle.to_tensor([[0.0], [1.0]], dtype="float32")
+        
     def forward(self, inputs):
         x = inputs
         if self._input_transform is not None:
             # The last column should be function of t.
             x = self._input_transform(x)
 
-        x0, x1 = paddle.split(x, num_or_sections=2, axis=1)
+        x0 = paddle.matmul(x, self.left_mat)
+        x1 = paddle.matmul(x, self.right_mat)
 
         # fourier feature layer
         yb_x = [
